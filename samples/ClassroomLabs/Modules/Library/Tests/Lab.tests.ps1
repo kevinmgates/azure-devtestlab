@@ -1,64 +1,73 @@
 [cmdletbinding()]
 Param()
-Import-Module $PSScriptRoot\..\Az.LabServices.psm1
+Import-Module $PSScriptRoot\..\Az.LabServices.psm1 -Force
 
-$rgName = 'AzLabsLibrary'
-$rgLocation = 'West Europe'
-$labName = 'TestLab'
-$laName = 'AzLabsLibrary-la'
-$imgName = 'CentOS-Based*'
-$maxUsers = 2
-$usageQuota = 30
-$usageAMode = 'Restricted'
-$shPsswd = $false
-$size = 'Medium'
-$title = 'Advancing Differentiation Workshop'
-$descr = 'Bringing it to the 21st Century'
-$userName = 'test0000'
-$password = 'Test00000000'
-$linuxRdp = $true
+#. $PSScriptRoot\Utils.ps1
+Import-Module $PSScriptRoot\Utils.psm1 -Force
+Write-Verbose "Loading Utils.psm1"
 
 Describe 'Lab' {
 
     BeforeAll {
-        if (-not (Get-AzResourceGroup -ResourceGroupName $rgName -EA SilentlyContinue)) {
-            New-AzResourceGroup -ResourceGroupName $rgName -Location $rgLocation | Out-null
-            Write-Verbose "$rgname resource group didn't exist. Created it."
-        }
 
-        $script:la = Get-AzLabAccount -ResourceGroupName $rgName -LabAccountName $laName
-        if (-not $la) {
-            $script:la = New-AzLabAccount -ResourceGroupName $rgName -LabAccountName $laName
-            Write-Verbose "$laName lab account created."                
-        }
+        $labName1 = "TestLab$(Get-Random)"
+        #$imgName1 = "CentOS-Based*"
+        $usageQuota1 = 30
+        $shPsswd1 = $false
+        $size1 = "Basic"
+        $userName1 = "test0000"
+        $password1 = "Test$(Get-Random)"
+        $linuxRdp1 = $true
+
+        $script:la = Get-FastLabAccount
+
     }
 
+    # This should be split in two tests for create and set
     It 'Can create a lab' {
                  
-        $lab = $script:la | Get-AzLab -LabName $labName
-            
-        if ($lab) {
-            $lab = $script:la `
-            | New-AzLab -LabName $LabName -MaxUsers $maxUsers -UsageQuotaInHours $usageQuota -UserAccessMode $usageAMode -SharedPasswordEnabled:$shPsswd `
-            | Publish-AzLab
-            Write-Verbose "$LabName lab already exist. Republished."
-        }
-        else {
-            $imgs = $script:la | Get-AzLabAccountGalleryImage
-            $imgs | Should -Not -Be $null
-            # $imgs.Count | Should -BeGreaterThan 0
-            $img = $imgs[0]
-            $img | Should -Not -Be $null
-            Write-Verbose "Image $imgName found."
-                
-            $lab = $script:la `
-            | New-AzLab -LabName $LabName -MaxUsers $maxUsers -UsageQuotaInHours $usageQuota -UserAccessMode $usageAMode -SharedPasswordEnabled:$shPsswd `
-            | New-AzLabTemplateVM -Image $img -Size $size -Title $title -Description $descr -UserName $userName -Password $password -LinuxRdpEnabled:$linuxRdp `
-            | Publish-AzLab
-            Write-Verbose "$LabName lab doesn't exist. Created it."
-        }
+
+        $imgs = $script:la | Get-AzLabAccountGalleryImage
+        $imgs | Should -Not -Be $null
+        # $imgs.Count | Should -BeGreaterThan 0
+        $img = $imgs[0]
+        $img | Should -Not -Be $null
+        Write-Verbose "Image $img found."
+        
+        Write-Verbose "Lab.Tests: Linux1 $linuxRdp1"
+        Write-Verbose "Lab.Tests: LabName1 $labName1"
+        Write-Verbose "Lab.Tests: la $($script:la)"
+
+        $lab = $script:la `
+        | New-AzLab -LabName $labName1 -Image $img -Size $size1 -UsageQuotaInHours $usageQuota1 -SharedPasswordEnabled:$shPsswd1 -UserName $userName1 -Password $password1 -LinuxRdpEnabled:$linuxRdp1 `
+        | Publish-AzLab
+        
+        Write-Verbose "$labName1 lab doesn't exist. Created it."
             
         $lab | Should -Not -BeNullOrEmpty                   
+    }
+    It 'Can set a lab' {
+
+        $lab = $script:la | Get-AzLab -LabName $labName1
+        $lab | Should -Not -BeNullOrEmpty                   
+
+        $lab | Set-AzLab -MaxUsers 3 -UsageQuotaInHours 10 -UserAccessMode 'Restricted' -SharedPasswordEnabled 'Enabled' | Out-Null
+    }
+    It 'Can set Title and description on template vm' {
+        $lab = $script:la | Get-AzLab -LabName $labName1
+        $templateVm = $lab | Get-AzLabTemplateVM
+        $templateVm | Should -Not -BeNullOrEmpty                   
+           
+        $templateVm | Set-AzLabTemplateVM -Title "Test Title" -Description "Test Desc"
+    }
+    It 'Can start and stop template vm' {
+        $lab = $script:la | Get-AzLab -LabName $labName1
+        $templateVm = $lab | Get-AzLabTemplateVM
+        $templateVm | Should -Not -BeNullOrEmpty
+           
+        $templateVm = $templateVm | Stop-AzLabTemplateVm
+        $templateVm = $templateVm | Start-AzLabTemplateVm
+        $templateVm | Should -Not -BeNullOrEmpty
     }
 
     It 'Can query using wildcards' {
@@ -68,14 +77,9 @@ Describe 'Lab' {
 
 
     it 'Can remove a lab' {
-        $lab = $script:la | Get-AzLab -LabName $labName
+        $lab = $script:la | Get-AzLab -LabName $labName1
 
-        # OK, this is ugly. I am testing randomly both branches in the creation test by leaving the lab there half the time
-        # In theory it should be two different tests, but We have issues of running time for tests, hence this hack ...
-
-        if((Get-Random -Minimum 1 -Maximum 10) -lt 5) {
-            $lab | Remove-AzLab
-            Write-Verbose "Removed lab"
-        }
+        $lab | Remove-AzLab
+        Write-Verbose "Removed lab"
     }
 }

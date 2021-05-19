@@ -1,3 +1,5 @@
+import path from 'path';
+
 import '../../modules/task-utils/polyfill';
 import { equalsIgnoreCase } from '../../modules/task-utils/polyfill';
 
@@ -222,12 +224,12 @@ function getInputData(vmName?: string, test?: boolean): CreateVmTaskInputData {
             retryOnFailure: retryOnFailure,
             retryCount: retryOnFailure && data.retryCount ? +data.retryCount : 0,
             subscriptionId: data.subscriptionId,
-            templateFile: data.templateFile,
+            templateFile: path.join(testutil.getTestDataFolder(), data.templateFile),
             vmName: vmName ? vmName : data.vmName,
             waitMinutes: data.waitMinutes ? +data.waitMinutes : 0
         };
     } else {
-        const connectedServiceName: string = tl.getInput('ConnectedServiceName', true);
+        const connectedServiceName: string = String(tl.getInput('ConnectedServiceName', true));
         const retryOnFailure: boolean = tl.getBoolInput('RetryOnFailure', false);
 
         inputData = {
@@ -236,15 +238,15 @@ function getInputData(vmName?: string, test?: boolean): CreateVmTaskInputData {
             deleteDeployment: tl.getBoolInput('DeleteFailedDeploymentBeforeRetry', false),
             deleteLabVm: tl.getBoolInput('DeleteFailedLabVMBeforeRetry', false),
             failOnArtifactError: tl.getBoolInput('FailOnArtifactError', false),
-            labId: tl.getInput('LabId', true),
-            parameterOverrides: tl.getInput('ParameterOverrides', false),
-            parametersFile: tl.getInput('ParametersFile', false),
+            labId: String(tl.getInput('LabId', true)),
+            parameterOverrides: String(tl.getInput('ParameterOverrides', false)),
+            parametersFile: String(tl.getInput('ParametersFile', false)),
             retryOnFailure: retryOnFailure,
-            retryCount: retryOnFailure ? +tl.getInput('RetryCount', false) : 0,
-            subscriptionId: tl.getEndpointDataParameter(connectedServiceName, 'SubscriptionId', true),
-            templateFile: tl.getInput('TemplateFile', true),
-            vmName: tl.getInput('VirtualMachineName', true),
-            waitMinutes: +tl.getInput('WaitMinutesForApplyArtifacts', false)
+            retryCount: retryOnFailure ? Number(tl.getInput('RetryCount', false)) : 0,
+            subscriptionId: String(tl.getEndpointDataParameter(connectedServiceName, 'SubscriptionId', true)),
+            templateFile: String(tl.getInput('TemplateFile', true)),
+            vmName: String(tl.getInput('VirtualMachineName', true)),
+            waitMinutes: Number(tl.getInput('WaitMinutesForApplyArtifacts', false))
         };
     }
 

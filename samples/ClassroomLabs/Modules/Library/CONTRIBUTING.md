@@ -1,7 +1,30 @@
 # Contributing
+Contributions to the PowerShell library are encouraged and welcome!  When contributing to this repository, please first discuss the change you wish to make via issue, email, or any other method with the owners of this repository before making a change.
 
-When contributing to this repository, please first discuss the change you wish to make via issue,
-email, or any other method with the owners of this repository before making a change.
+## Submitting Code
+The best way to contribute code to the repository is to create a fork, apply & test your changes in the fork, and then create a pull request to submit the code back to this repository.  Remember these tips for your pull request:
+* Include a good title and detailed description on the new contribution or the change
+* Sample code (if appropriate) on how others can leveage the new feature/code/change
+* Update [AllFeatures.ps1](Scenarios/AllFeatures.ps1) (if applicable) to publish a sample for your change
+
+## Running Tests
+We use [Pester](https://pester.dev/) to execute our PowerShell-based tests both locally and in GitHub Actions.  To execute tests for the library:
+1. Clone the repository
+2. Open a PowerShell window for test execution
+3. Ensure that you have Pester installed (we require version 4):
+    ```PowerShell
+    Install-Module -Name Pester -Force -AllowClobber -RequiredVersion 4.10.1
+    ```
+2. Change directory to ./samples/ClassroomLabs/Modules/Library/Tests
+3. Execute the relevent command:
+    ```Powershell
+    # To run all the tests from the
+    # ./samples/ClassroomLabs/Modules/Library/Tests directory:
+    Invoke-Pester *
+
+    # To run just the 'fast' tests:
+    Invoke-Pester Fast*
+    ```
 
 ## Code Guidelines
 
@@ -16,56 +39,79 @@ email, or any other method with the owners of this repository before making a ch
 function New-AzLab {
     [CmdletBinding()]
     param(
-      [parameter(Mandatory=$true,HelpMessage="Lab Account to create lab into", ValueFromPipeline=$true)]
-      [ValidateNotNullOrEmpty()]
-      $LabAccount,
+        [parameter(Mandatory = $true, HelpMessage = "Lab Account to create lab into", ValueFromPipeline = $true)]
+        [ValidateNotNullOrEmpty()]
+        $LabAccount,
   
-      [parameter(Mandatory=$true, ValueFromPipelineByPropertyName = $true, HelpMessage="Name of Lab to create")]
-      [ValidateNotNullOrEmpty()]
-      $LabName,
+        [parameter(Mandatory = $true, ValueFromPipelineByPropertyName = $true, HelpMessage = "Name of Lab to create")]
+        [ValidateNotNullOrEmpty()]
+        $LabName,
 
-      [parameter(Mandatory=$false, ValueFromPipelineByPropertyName = $true, HelpMessage="Maximum number of users in lab (defaults to 5)")]
-      [int]
-      $MaxUsers = 5,
+        [parameter(Mandatory = $true, ValueFromPipelineByPropertyName = $true, HelpMessage = "Shared Image or Gallery image to use")]
+        [ValidateNotNullOrEmpty()]
+        $Image,
 
-      [parameter(Mandatory=$false, ValueFromPipelineByPropertyName = $true, HelpMessage="Quota of hours x users (defaults to 40)")]
-      [int]
-      $UsageQuotaInHours = 40,
+        [parameter(Mandatory = $true, ValueFromPipelineByPropertyName = $true, HelpMessage = "Size for template VM")]
+        [ValidateNotNullOrEmpty()]
+        $Size,
 
-      [parameter(Mandatory=$false, ValueFromPipelineByPropertyName = $true, HelpMessage="Access mode for the lab (either Restricted or Open)")]
-      [ValidateSet('Restricted', 'Open')]
-      [string]
-      $UserAccessMode = 'Restricted',
+        [parameter(Mandatory = $true, ValueFromPipelineByPropertyName = $true, HelpMessage = "User name if shared password is enabled")]
+        [string]
+        $UserName,
 
-      [parameter(mandatory = $false, ValueFromPipelineByPropertyName = $true)]
-      [switch]
-      $SharedPasswordEnabled = $false 
+        [parameter(Mandatory = $true, ValueFromPipelineByPropertyName = $true, HelpMessage = "Password if shared password is enabled")]
+        [string]
+        $Password,
+
+        [parameter(mandatory = $false, ValueFromPipelineByPropertyName = $true)]
+        [switch]
+        $LinuxRdpEnabled = $false,
+
+        [parameter(Mandatory = $false, ValueFromPipelineByPropertyName = $true, HelpMessage = "Quota of hours x users (defaults to 40)")]
+        [int]
+        $UsageQuotaInHours = 40,
+
+        [parameter(mandatory = $false, ValueFromPipelineByPropertyName = $true)]
+        [switch]
+        $SharedPasswordEnabled = $false 
     )
   
-    begin {. BeginPreamble}
+    begin { . BeginPreamble }
     process {
-      try {
-        foreach($la in $LabAccount) {
-            $uri = (ConvertToUri -resource $la) + "/labs/" + $LabName
-            $sharedPassword = if($SharedPasswordEnabled) {"Enabled"} else {"Disabled"}
+        try {
+            foreach ($la in $LabAccount) {
+                $labAccountUri = (ConvertToUri -resource $la)
+                $createUri = $labAccountUri + "/createLab"
+                $labUri = $labAccountUri + "/labs/" + $LabName
+                $environmentSettingUri = $labUri + "/environmentsettings/default"
+                $sharedPassword = if ($SharedPasswordEnabled) { "Enabled" } else { "Disabled" }
+                $imageType = if ($image.id -match '/galleryimages/') { 'galleryImageResourceId' } else { 'sharedImageResourceId' }
+                if ($LinuxRdpEnabled) { $linuxRdpState = 'Enabled' } else { $linuxRdpState = 'Disabled' }
 
-            InvokeRest -Uri $uri -Method 'Put' -Body (@{
-                location = $LabAccount.location
-                properties = @{
-                    maxUsersInLab = $MaxUsers.ToString()
-                    usageQuota = "PT$($UsageQuotaInHours.ToString())H"
-                    userAccessMode = $UserAccessMode
-                    sharedPasswordEnabled = $sharedPassword
-                }
-            } | ConvertTo-Json) | Out-Null
-            return WaitProvisioning -uri $uri -delaySec 60 -retryCount 120
+                InvokeRest -Uri $createUri -Method 'Post' -Body (@{
+                        name = $LabName
+                        labParameters = @{
+                            $imageType = $image.id
+                            linuxRdpState = $linuxRdpState
+                            password = $Password
+                            username = $UserName
+                            userQuota = "PT$($UsageQuotaInHours.ToString())H"
+                            vmSize = $Size
+                            sharedPasswordState = $sharedPassword
+                        }
+                    } | ConvertTo-Json) | Out-Null
+
+                $lab = WaitProvisioning -uri $labUri -delaySec 60 -retryCount 120
+                WaitProvisioning -uri $environmentSettingUri -delaySec 60 -retryCount 120 | Out-Null
+                return $lab
+            }
         }
-      } catch {
-        Write-Error -ErrorRecord $_ -EA $callerEA
-      }
+        catch {
+            Write-Error -ErrorRecord $_ -EA $callerEA
+        }
     }
-    end {}
-  }
+    end { }
+}
 ```
 
 7. Use the `WaitProvisioning` and `WaitPublishing` utility function as in the function above for long running operations.
